@@ -1,11 +1,12 @@
-package javatube;
+package com.github.felipeucelli.javatube;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -78,8 +79,10 @@ public class Channel extends Playlist{
     }
 
     @Override
-    protected String setHtml() throws IOException {
-        return InnerTube.downloadWebPage(getHtmlUrl());
+    protected String setHtml() throws Exception {
+        Map<String, String> header = new HashMap<>();
+        header.put("User-Agent", "\"Mozilla/5.0\"");
+        return Request.get(getHtmlUrl(), null, header).toString();
     }
 
     private JSONObject getActiveTab(JSONObject rawJson) throws JSONException{
@@ -281,21 +284,30 @@ public class Channel extends Playlist{
     @Override
     public String getLastUpdated() throws Exception {
         setHtmlUrl(videosUrl);
-        try {
-            return getActiveTab(getJson()).getJSONObject("tabRenderer")
+        JSONObject lastVideoContent;
+        try{
+             lastVideoContent = getActiveTab(getJson()).getJSONObject("tabRenderer")
                     .getJSONObject("content")
                     .getJSONObject("richGridRenderer")
                     .getJSONArray("contents")
                     .getJSONObject(0)
                     .getJSONObject("richItemRenderer")
                     .getJSONObject("content")
-                    .getJSONObject("videoRenderer")
-                    .getJSONObject("publishedTimeText")
-                    .getString("simpleText");
-        }catch (JSONException j){
+                    .getJSONObject("videoRenderer");
+        }catch (JSONException e){
             return null;
         }
+        String videoId = lastVideoContent.getString("videoId");
+        JSONObject response = new InnerTube("WEB").player(videoId);
+        try {
+            return response.getJSONObject("microformat")
+                    .getJSONObject("playerMicroformatRenderer")
+                    .getString("publishDate");
 
+        }catch (JSONException j){
+            return lastVideoContent.getJSONObject("publishedTimeText")
+                    .getString("simpleText");
+        }
     }
 
     @Override

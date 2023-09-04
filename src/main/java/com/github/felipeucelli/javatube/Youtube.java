@@ -1,6 +1,5 @@
-package javatube;
+package com.github.felipeucelli.javatube;
 
-import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -13,11 +12,40 @@ public class Youtube {
 
     private final String urlVideo;
     private final String watchUrl;
+    private InnerTube innerTube = null;
     private JSONObject vidInfo = null;
     private String html = null;
     private String js = null;
+    private JSONObject ytCfg = null;
+    private JSONObject signatureTimestamp = null;
+    private String playerJs = null;
 
+    /**
+     * Default client: WEB
+     * */
     public Youtube(String url) throws Exception {
+        urlVideo = url;
+        watchUrl = "https://www.youtube.com/watch?v=" + videoId();
+    }
+    /**
+     * Clients:
+     *          WEB,
+     *          WEB_EMBED,
+     *          WEB_MUSIC,
+     *          WEB_CREATOR,
+     *          ANDROID,
+     *          ANDROID_EMBED,
+     *          ANDROID_MUSIC,
+     *          ANDROID_CREATOR ,
+     *          IOS,
+     *          IOS_EMBED,
+     *          IOS_MUSIC,
+     *          IOS_CREATOR,
+     *          MWEB,
+     *          TV_EMBED
+     * */
+    public Youtube(String url, String clientName) throws Exception {
+        innerTube = new InnerTube(clientName);
         urlVideo = url;
         watchUrl = "https://www.youtube.com/watch?v=" + videoId();
     }
@@ -32,11 +60,12 @@ public class Youtube {
         }
     }
 
-    private String setHtml() throws IOException {
-        return InnerTube.downloadWebPage(watchUrl);
+    private String setHtml() throws Exception {
+        Map<String, String> headers = innerTube == null ? null : innerTube.getClientHeaders();
+        return Request.get(watchUrl, headers).toString(StandardCharsets.UTF_8.name()).replace("\n", "");
     }
 
-    private String getHtml() throws Exception {
+    public String getHtml() throws Exception {
         if(html == null){
             html = setHtml();
         }
@@ -45,11 +74,11 @@ public class Youtube {
 
     private static JSONArray applyDescrambler(JSONObject streamData) throws JSONException{
         JSONArray formats = new JSONArray();
-        for(int i = 0; streamData.getJSONArray("formats").length() > i; i++){
-            formats.put(streamData.getJSONArray("formats").get(i));
+        if(streamData.has("formats")){
+            formats.putAll(streamData.getJSONArray("formats"));
         }
-        for(int i = 0; streamData.getJSONArray("adaptiveFormats").length() > i; i++){
-            formats.put(streamData.getJSONArray("adaptiveFormats").get(i));
+        if(streamData.has("adaptiveFormats")){
+            formats.putAll(streamData.getJSONArray("adaptiveFormats"));
         }
         for(int i = 0; i < formats.length(); i++){
             if(formats.getJSONObject(i).has("signatureCipher")){
@@ -67,24 +96,43 @@ public class Youtube {
     }
 
     private JSONObject setVidInfo() throws Exception {
-        String pattern = "ytInitialPlayerResponse\\s=\\s(\\{\\\"responseContext\\\":.*?\\});</script>";
+        String pattern = "ytInitialPlayerResponse\\s=\\s(\\{\"responseContext\":.*?\\});(?:var|</script>)";
         Pattern regex = Pattern.compile(pattern);
         Matcher matcher = regex.matcher(getHtml());
         if(matcher.find()){
            return new JSONObject(matcher.group(1));
         }else {
-            throw new Exception("RegexMatcherError: " + pattern);
+            throw new Exception("RegexMatcherError. Unable to find video information: " + pattern);
         }
     }
 
     private JSONObject getVidInfo() throws Exception {
-        if(vidInfo == null){
-            vidInfo = setVidInfo();
+        if (vidInfo == null) {
+            if (innerTube == null) {
+                vidInfo = setVidInfo();
+            } else {
+                if (innerTube.getRequireJsPlayer()) {
+                    innerTube.updateInnerTubeContext(getSignatureTimestamp());
+                }
+                vidInfo = innerTube.player(videoId());
+            }
         }
         return vidInfo;
     }
 
-    private JSONObject streamData() throws Exception {
+    private void checkAvailability() throws Exception {
+        JSONObject status = getVidInfo().getJSONObject("playabilityStatus");
+        if(status.has("liveStreamability")) {
+            throw new Exception("Video is a live stream.");
+        } else if(Objects.equals(status.getString("status"), "LOGIN_REQUIRED")){
+            throw new Exception("This is a private video.");
+        } else if(!Objects.equals(status.getString("status"), "OK")){
+            throw new Exception(status.getString("reason"));
+        }
+    }
+
+     JSONObject streamData() throws Exception {
+        checkAvailability();
         return getVidInfo().getJSONObject("streamingData");
     }
 
@@ -99,18 +147,19 @@ public class Youtube {
         ArrayList<Stream> fmtStream = new ArrayList<>();
         String title = getTitle();
         Stream video;
-        Cipher cipher = new Cipher(getJs());
+        Cipher cipher = new Cipher(getJs(), getYtPlayerJs());
         for (int i = 0; streamManifest.length() > i; i++) {
             if(streamManifest.getJSONObject(i).has("signatureCipher")){
                 String oldUrl = decodeURL(streamManifest.getJSONObject(i).getString("url"));
                 streamManifest.getJSONObject(i).remove("url");
-                streamManifest.getJSONObject(i).put("url", oldUrl + "&sig=" + cipher.getSignature(decodeURL(streamManifest.getJSONObject(i).getString("s")).split("(?!^)")));
+                String sig = streamManifest.getJSONObject(i).getString("s");
+                streamManifest.getJSONObject(i).put("url", oldUrl + "&sig=" + cipher.getSignature(decodeURL(sig)));
             }
 
             String oldUrl = streamManifest.getJSONObject(i).getString("url");
             Matcher matcher = Pattern.compile("&n=(.*?)&").matcher(oldUrl);
             if (matcher.find()) {
-                String newUrl = oldUrl.replaceFirst("&n=(.*?)&", "&n=" + cipher.calculateN(matcher.group(1)) + "&");
+                String newUrl = oldUrl.replaceFirst("&n=(.*?)&", "&n=" + cipher.getNSig(matcher.group(1)) + "&");
                 streamManifest.getJSONObject(i).put("url", newUrl);
             }
 
@@ -119,21 +168,67 @@ public class Youtube {
         }
         return fmtStream;
     }
+    private String setSignatureTimestamp() throws Exception {
+        String pattern = "signatureTimestamp:(\\d*)";
+        Pattern regex = Pattern.compile(pattern);
+        Matcher matcher = regex.matcher(getJs());
+        if(matcher.find()){
+            return matcher.group(1);
+        }else {
+            throw new Exception("RegexMatcherError. Unable to find signatureTimestamp in playerJs: " + getYtPlayerJs());
+        }
+    }
+    public JSONObject getSignatureTimestamp() throws Exception {
+        if(signatureTimestamp == null){
+            signatureTimestamp =  new JSONObject(
+            "{" +
+                    "playbackContext:{" +
+                        "contentPlaybackContext: {" +
+                            "signatureTimestamp:" + setSignatureTimestamp() + "}" +
+                        "}" +
+                    "}"
+            );
+        }
+        return signatureTimestamp;
+    }
 
-    private String getYtPlayerJs() throws Exception {
-        Pattern pattern = Pattern.compile("(/s/player/[\\w\\d]+/[\\w\\d_/.]+/base\\.js)");
+    private JSONObject setYtCfg() throws Exception {
+        Pattern pattern = Pattern.compile("window\\.ytplayer=\\{};ytcfg\\.set\\((\\{.*?\\})\\);");
+        Matcher matcher = pattern.matcher(getHtml());
+        if(matcher.find()){
+            return new JSONObject(matcher.group(1));
+        }else {
+            throw new Exception("RegexMatcherError. Could not find ytCfg: " + pattern);
+        }
+    }
+
+    public JSONObject getYtCfg() throws Exception {
+        if(ytCfg == null){
+            ytCfg = setYtCfg();
+        }
+        return ytCfg;
+    }
+
+    private String setYtPlayerJs() throws Exception {
+        Pattern pattern = Pattern.compile("(/s/player/[\\w\\d]+/[\\w\\d_/.\\-]+/base\\.js)");
         Matcher matcher = pattern.matcher(getHtml());
         if (matcher.find()) {
             return "https://youtube.com" + matcher.group(1);
         }else {
-            throw new Exception("RegexMatcherError: " + pattern);
+            throw new Exception("RegexMatcherError. Could not find playerJs: " + pattern);
         }
+    }
+    public String getYtPlayerJs() throws Exception {
+        if(playerJs == null){
+            playerJs = setYtPlayerJs();
+        }
+        return playerJs;
     }
 
     private String setJs() throws Exception {
-        return InnerTube.downloadWebPage(getYtPlayerJs());
+        return Request.get(getYtPlayerJs()).toString().replace("\n", "");
     }
-    private String getJs() throws Exception {
+    public String getJs() throws Exception {
         if(js == null){
             js = setJs();
         }
@@ -160,7 +255,7 @@ public class Youtube {
         if (matcher.find()) {
             return matcher.group(0);
         }else {
-            throw new Exception("RegexMatcherError: " + pattern);
+            throw new Exception("RegexMatcherError. Unable to find publication date: " + pattern);
         }
     }
 
