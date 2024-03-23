@@ -7,7 +7,6 @@ import org.json.JSONObject;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.*;
@@ -16,27 +15,22 @@ import java.util.regex.Pattern;
 
 
 class LocalNameSpace extends java.util.AbstractMap<String, Object> {
-    private final List<Map<String, Object>> maps;
+    private final Map<String, Object> maps;
 
     public LocalNameSpace(Map<String, Object> maps) {
-        this.maps = Collections.singletonList(maps);
+        this.maps = maps;
     }
 
     public Object getValue(String key){
-        return maps.get(0).get(key);
+        return maps.get(key);
     }
     public LocalNameSpace newChild(Map<String, Object> obj){
-        maps.get(0).putAll(obj);
-        return new LocalNameSpace(maps.get(0));
+        maps.putAll(obj);
+        return new LocalNameSpace(maps);
     }
     @Override
     public Object put(String key, Object value) {
-        for (java.util.Map<String, Object> scope : maps) {
-            if (scope.containsKey(key)) {
-                return scope.put(key, value);
-            }
-        }
-        return maps.get(0).put(key, value);
+        return maps.put(key, value);
     }
 
     @Override
@@ -141,10 +135,13 @@ class JsToJson{
     }
     private String fixKv(Matcher m2) throws Exception {
         String v = m2.group(0);
-        if (v.equals("true") || v.equals("false") || v.equals("null")){
+        if (v.equals("true") || v.equals("false")){
             return v;
-        }else if (v.equals("undefined") || v.equals("void 0")){
-            return "null";
+        }else if(v.equals("null")){
+            return "None";
+        }
+        else if (v.equals("undefined") || v.equals("void 0")){
+            return "None";
         }else if (v.startsWith("/*") || v.startsWith("//") || v.startsWith("!") || v.equals(",")){
             return "";
         }
@@ -337,9 +334,9 @@ public class JsInterpreter {
         if(a instanceof JS_Undefined || b instanceof JS_Undefined){
             return Double.NaN;
         }
-        try {
+        if(a instanceof Number && b instanceof Number) {
             return castToInt(a) + castToInt(b);
-        }catch (Exception e){
+        }else{
             return a + (String) b;
         }
     }
@@ -417,7 +414,7 @@ public class JsInterpreter {
         throw new ClassCastException("It was not possible to convert object to Map<String, Object>, because the object is a " + obj.getClass().getName());
     }
     private static Object jsTernary(Object cndn, Object if_true, Object if_false) {
-        if (cndn == null || cndn == JS_Undefined || cndn.equals(Boolean.FALSE) || cndn.equals(0) || cndn.equals("")) {
+        if (cndn == null || cndn == JS_Undefined || cndn.equals(Boolean.FALSE) || cndn.equals(0) || cndn.equals("") || Objects.equals(cndn, "None")) {
             return if_false;
         }
 
@@ -581,15 +578,12 @@ public class JsInterpreter {
             String obj = expr.substring(4);
             if (obj.startsWith("Date(")){
                 List<String> result = separateAtParen(obj.substring(4), null);
-                String left = result.get(0).substring(1);
+                String left = result.get(0).substring(1).replace("\"", "");
                 String right = result.get(1);
 
-                OffsetDateTime dateTime = OffsetDateTime.parse(left.replace("\"", ""));
-                Instant instant = dateTime.toInstant();
+                Instant instant = Instant.parse(left);
 
-                double secondsSinceEpoch = instant.toEpochMilli() / Double.parseDouble(right.replace("/", ""));
-                int date = (int) secondsSinceEpoch;
-                expr = dump(date * 1000, localVars) + right;
+                expr = dump(instant.toEpochMilli(), localVars) + right;
             }else {
                 throw new Exception("Unsupported object: " + obj);
             }
@@ -1309,7 +1303,11 @@ public class JsInterpreter {
                 if(idx instanceof Double){
                     finalIdx = (int) Math.round((double) idx);
                 }else {
-                    finalIdx = (int) idx;
+                    if(idx instanceof String){
+                        finalIdx = Integer.parseInt((String) idx);
+                    }else{
+                        finalIdx = (int) idx;
+                    }
                 }
                 return ((ArrayList<?>) obj).get(finalIdx);
             } else if (obj instanceof Map) {
@@ -1326,10 +1324,15 @@ public class JsInterpreter {
     }
     @SuppressWarnings("unchecked")
     private Object dump(Object obj, Object namespace) {
+        if(obj == null){
+            obj = "null";
+        }
         if(obj.toString().matches("-?\\d+(\\.\\d+)?")){
             return Integer.parseInt(obj.toString());
         }else if (obj instanceof Boolean){
             return obj.toString();
+        }else if(Objects.equals(obj,"null")){
+            return "None";
         }
         assert namespace instanceof Map;
         return namedObject((Map<String, Object>) namespace, obj);

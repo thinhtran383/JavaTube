@@ -106,13 +106,7 @@ public class ChannelTest {
         Assertions.assertFalse(new Channel(linkToTest).getDescription().isEmpty());
     }
 
-    @ParameterizedTest
-    @CsvSource({
-            "https://www.youtube.com/@Alanwalkermusic"
-    })
-    public void testGetBiography(String linkToTest) throws Exception {
-        Assertions.assertNotNull(new Channel(linkToTest).getBiography());
-    }
+
 
     @ParameterizedTest
     @CsvSource({
@@ -134,15 +128,17 @@ public class ChannelTest {
     @ParameterizedTest
     @CsvSource({
             "https://www.youtube.com/@Alanwalkermusic",
-            "https://www.youtube.com/@spinninrecords"
+            "https://www.youtube.com/@spinninrecords",
+            "https://www.youtube.com/@NoCopyrightSounds",
+            "https://www.youtube.com/@Monstercat"
     })
     public void testGetShorts(String linkToTest) throws Exception {
-        Assertions.assertTrue(48 <= new Channel(linkToTest).getShorts().size());
+        Assertions.assertTrue(48 < new Channel(linkToTest).getShorts().size());
     }
 
     @ParameterizedTest
     @CsvSource({
-            "https://www.youtube.com/@spinninrecords"
+            "https://www.youtube.com/@spinninrecords",
     })
     public void testGetLives(String linkToTest) throws Exception {
         Assertions.assertTrue(30 < new Channel(linkToTest).getLives().size());
@@ -150,7 +146,15 @@ public class ChannelTest {
 
     @ParameterizedTest
     @CsvSource({
-            "https://www.youtube.com/@VEVO, 300",
+            "https://www.youtube.com/@Alanwalkermusic"
+    })
+    public void testGetReleases(String linkToTest) throws Exception {
+        Assertions.assertTrue(28 < new Channel(linkToTest).getReleases().size());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "https://www.youtube.com/@Alanwalkermusic, 30",
             "https://www.youtube.com/@Monstercat, 30"
     })
     public void testGetPlaylists(String linkToTest, int expectedOutput) throws Exception {

@@ -18,7 +18,7 @@ public class PlaylistTest {
 
     @ParameterizedTest
     @CsvSource({
-            "https://www.youtube.com/playlist?list=PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj, Pop Music Playlist - Timeless Pop Songs (Updated Weekly 2023)",
+            "https://www.youtube.com/playlist?list=PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj, Pop Music Playlist - Timeless Pop Songs (Updated Weekly 2024)",
             "https://www.youtube.com/playlist?list=PLMC9KNkIncKtGvr2kFRuXBVmBev6cAJ2u, Best Pop Music Videos - Top Pop Hits Playlist"
     })
     public void testGetTitle(String linkToTest, String expectedOutput) throws Exception {
@@ -31,7 +31,7 @@ public class PlaylistTest {
             "https://www.youtube.com/playlist?list=PLMC9KNkIncKtGvr2kFRuXBVmBev6cAJ2u"
     })
     public void testLength(String linkToTest) throws Exception {
-        Assertions.assertTrue(100 <= Integer.parseInt(new Playlist(linkToTest).length().replace(",", "")));
+        Assertions.assertTrue(100 < Integer.parseInt(new Playlist(linkToTest).length().replace(",", "")));
     }
 
     @ParameterizedTest

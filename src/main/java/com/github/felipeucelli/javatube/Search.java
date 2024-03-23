@@ -12,8 +12,10 @@ import java.util.*;
 public class Search {
 
     private final String query;
-
     private JSONObject jsonResult = null;
+    private final InnerTube innerTubeClient = new InnerTube("WEB");
+    private Map<String, ArrayList<String>> results = new HashMap<>();
+    private String continuationToken = "";
 
     public Search(String query){
         this.query = query;
@@ -25,13 +27,13 @@ public class Search {
 
     private JSONObject getJsonResult() throws Exception {
         if(jsonResult == null){
-            jsonResult =  fetchQuery();
+            jsonResult =  setJson();
         }
         return jsonResult;
     }
 
-    private JSONObject fetchQuery() throws Exception {
-        return new InnerTube("WEB").search(safeQuery());
+    private JSONObject setJson() throws Exception {
+        return innerTubeClient.search(safeQuery(), continuationToken);
     }
 
     private ArrayList<String> extractShelfRenderer(JSONArray items) throws JSONException {
@@ -54,15 +56,33 @@ public class Search {
 
     private Map<String, ArrayList<String>> fetchAndParse() throws Exception {
         JSONObject rawResults = getJsonResult();
-        JSONObject sections = rawResults.getJSONObject("contents")
-                .getJSONObject("twoColumnSearchResultsRenderer")
-                .getJSONObject("primaryContents")
-                .getJSONObject("sectionListRenderer")
-                .getJSONArray("contents")
-                .getJSONObject(0);
+        JSONArray sections;
+        try {
+            sections = rawResults.getJSONObject("contents")
+                    .getJSONObject("twoColumnSearchResultsRenderer")
+                    .getJSONObject("primaryContents")
+                    .getJSONObject("sectionListRenderer")
+                    .getJSONArray("contents");
+        }catch (JSONException e){
+            sections = rawResults.getJSONArray("onResponseReceivedCommands")
+                    .getJSONObject(0)
+                    .getJSONObject("appendContinuationItemsAction")
+                    .getJSONArray("continuationItems");
+        }
 
-        JSONArray rawVideoList = new JSONArray(sections.getJSONObject("itemSectionRenderer")
-                .getJSONArray("contents"));
+        JSONArray rawVideoList = new JSONArray();
+        for(int i = 0; i < sections.length(); i++){
+            if(sections.getJSONObject(i).has("itemSectionRenderer")){
+                rawVideoList = sections.getJSONObject(i).getJSONObject("itemSectionRenderer")
+                        .getJSONArray("contents");
+            }
+            if(sections.getJSONObject(i).has("continuationItemRenderer")){
+                continuationToken = sections.getJSONObject(i).getJSONObject("continuationItemRenderer")
+                        .getJSONObject("continuationEndpoint")
+                        .getJSONObject("continuationCommand")
+                        .getString("token");
+            }
+        }
 
         ArrayList<String> videos = new ArrayList<>();
         ArrayList<String> shorts = new ArrayList<>();
@@ -76,10 +96,12 @@ public class Search {
                 videos.add("https://www.youtube.com/watch?v=" + vidId);
 
             } else if (rawVideoList.getJSONObject(i).has("shelfRenderer")) {
-                videos.addAll(extractShelfRenderer(rawVideoList.getJSONObject(i).getJSONObject("shelfRenderer")
-                        .getJSONObject("content")
-                        .getJSONObject("verticalListRenderer")
-                        .getJSONArray("items")));
+                JSONObject contents = rawVideoList.getJSONObject(i).getJSONObject("shelfRenderer")
+                        .getJSONObject("content");
+                if(contents.has("verticalListRenderer")){
+                    videos.addAll(extractShelfRenderer(contents.getJSONObject("verticalListRenderer")
+                            .getJSONArray("items")));
+                }
 
             } else if (rawVideoList.getJSONObject(i).has("reelShelfRenderer")) {
                 shorts.addAll(extractReelShelfRenderer(rawVideoList.getJSONObject(i)
@@ -107,6 +129,17 @@ public class Search {
         return results;
     }
 
+    public void generateContinuation() throws Exception {
+        if(!Objects.equals(continuationToken, "")){
+            jsonResult = null;
+            Map<String, ArrayList<String>> result = fetchAndParse();
+            results.get("videos").addAll(result.get("videos"));
+            results.get("shorts").addAll(result.get("shorts"));
+            results.get("channel").addAll(result.get("channel"));
+            results.get("playlist").addAll(result.get("playlist"));
+        }
+    }
+
     public List<String> getCompletionSuggestions() throws Exception {
         List<String> result = new ArrayList<>();
         try {
@@ -122,18 +155,22 @@ public class Search {
 
     public ArrayList<String> getResults() throws Exception {
         ArrayList<String> result = new ArrayList<>();
-        Map<String, ArrayList<String>> parsed =  fetchAndParse();
-        result.addAll(parsed.get("videos"));
-        result.addAll(parsed.get("shorts"));
-        result.addAll(parsed.get("channel"));
-        result.addAll(parsed.get("playlist"));
+        if(results.isEmpty()){
+            results = fetchAndParse();
+        }
+        result.addAll(results.get("videos"));
+        result.addAll(results.get("shorts"));
+        result.addAll(results.get("channel"));
+        result.addAll(results.get("playlist"));
         return result;
     }
 
     public ArrayList<Youtube> getVideosResults() throws Exception {
         ArrayList<Youtube> result = new ArrayList<>();
-        ArrayList<String> channel =  fetchAndParse().get("videos");
-        for(String ids : channel){
+        if(results.isEmpty()){
+            results = fetchAndParse();
+        }
+        for(String ids : results.get("videos")){
             result.add(new Youtube(ids));
         }
         return result;
@@ -141,8 +178,10 @@ public class Search {
 
     public ArrayList<Youtube> getShortsResults() throws Exception {
         ArrayList<Youtube> result = new ArrayList<>();
-        ArrayList<String> channel =  fetchAndParse().get("shorts");
-        for(String ids : channel){
+        if(results.isEmpty()){
+            results = fetchAndParse();
+        }
+        for(String ids : results.get("shorts")){
             result.add(new Youtube(ids));
         }
         return result;
@@ -150,8 +189,10 @@ public class Search {
 
     public ArrayList<Channel> getChannelsResults() throws Exception {
         ArrayList<Channel> result = new ArrayList<>();
-        ArrayList<String> channel =  fetchAndParse().get("channel");
-        for(String ids : channel){
+        if(results.isEmpty()){
+            results = fetchAndParse();
+        }
+        for(String ids : results.get("channel")){
             result.add(new Channel(ids));
         }
         return result;
@@ -159,8 +200,10 @@ public class Search {
 
     public ArrayList<Playlist> getPlaylistsResults() throws Exception {
         ArrayList<Playlist> result = new ArrayList<>();
-        ArrayList<String> playlist =  fetchAndParse().get("playlist");
-        for(String ids : playlist){
+        if(results.isEmpty()){
+            results = fetchAndParse();
+        }
+        for(String ids : results.get("playlist")){
             result.add(new Playlist(ids));
         }
         return result;

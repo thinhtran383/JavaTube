@@ -4,10 +4,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -17,6 +14,7 @@ public class Channel extends Playlist{
     private final String videosUrl;
     private final String shortsUrl;
     private final String streamsUrl;
+    private final String releasesUrl;
     private final String playlistUrl;
     private final String communityUrl;
     private final String featuredChannelUrl;
@@ -24,6 +22,7 @@ public class Channel extends Playlist{
     private final String url;
     private String htmlPage;
     private String visitorData;
+    private int attempts = 0;
 
     public Channel(String inputUrl) throws Exception {
         super(inputUrl);
@@ -33,10 +32,20 @@ public class Channel extends Playlist{
         videosUrl = channelUrl + "/videos";
         shortsUrl = channelUrl + "/shorts";
         streamsUrl = channelUrl + "/streams";
+        releasesUrl = channelUrl + "/releases";
         playlistUrl = channelUrl + "/playlists";
         communityUrl = channelUrl + "/community";
         featuredChannelUrl = channelUrl + "/channels";
         aboutUrl = channelUrl + "/about";
+    }
+
+    @Override
+    public String toString(){
+        try {
+            return "<com.github.felipeucelli.javatube.Channel object: channelUrl=" + extractUrl() + ">";
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private String extractUrl() throws Exception {
@@ -58,7 +67,7 @@ public class Channel extends Playlist{
                 }
             }
         }
-        throw new Exception("RegexMatcherError");
+        throw new Exception("RegexMatcherError. Unable to find match on: " + url);
     }
 
     private void setHtmlUrl(String url){
@@ -74,15 +83,8 @@ public class Channel extends Playlist{
     }
 
     @Override
-    protected String baseData(String continuation){
-        return "{\"continuation\": \"" + continuation + "\", \"context\": {\"client\": {\"clientName\": \"WEB\",  \"visitorData\": \"" + visitorData + "\", \"clientVersion\": \"2.20221107.06.00\"}}}";
-    }
-
-    @Override
     protected String setHtml() throws Exception {
-        Map<String, String> header = new HashMap<>();
-        header.put("User-Agent", "\"Mozilla/5.0\"");
-        return Request.get(getHtmlUrl(), null, header).toString();
+        return Request.get(getHtmlUrl(), null, innerTube.getClientHeaders()).toString();
     }
 
     private JSONObject getActiveTab(JSONObject rawJson) throws JSONException{
@@ -155,11 +157,24 @@ public class Channel extends Playlist{
     }
 
     @Override
+    protected JSONArray buildContinuationUrl(String continuation) throws Exception {
+        String data = "{" +
+                        "\"continuation\": \"" + continuation + "\"," +
+                        "\"context\": {" +
+                            "\"client\": {" +
+                                "\"visitorData\": \"" + visitorData + "\"" +
+                            "}" +
+                        "}" +
+                    "}";
+        return extractVideos(innerTube.browse(new JSONObject(data)));
+    }
+
+    @Override
     protected JSONArray extractVideos(JSONObject rawJson){
         JSONArray swap = new JSONArray();
         try {
-            JSONArray importantContent;
-            try {
+            JSONArray importantContent = new JSONArray();
+            if(rawJson.has("contents")) {
                 JSONObject activeTab = getActiveTab(rawJson);
 
                 visitorData = rawJson.getJSONObject("responseContext")
@@ -169,33 +184,23 @@ public class Channel extends Playlist{
 
                 importantContent = getImportantContent(activeTab);
 
-
-            }catch (JSONException e){
+            }else if (rawJson.has("onResponseReceivedActions")){
                 importantContent = rawJson.getJSONArray("onResponseReceivedActions")
                         .getJSONObject(0)
                         .getJSONObject("appendContinuationItemsAction")
                         .getJSONArray("continuationItems");
+
+            }else if (attempts < 3){
+                    // YouTube is blocking very quick requests for shorts, so we wait and repeat the request
+                    Thread.sleep(1000);
+                    swap = extractContinuationItems(importantContent);
+                    attempts += 1;
             }
 
-            try{
-                String continuation = importantContent.getJSONObject(importantContent.length() - 1)
-                        .getJSONObject("continuationItemRenderer")
-                        .getJSONObject("continuationEndpoint")
-                        .getJSONObject("continuationCommand")
-                        .getString("token");
-                JSONArray continuationEnd = new JSONArray(buildContinuationUrl(continuation));
-
-                for(int i = 0; i < importantContent.length(); i++){
-                    swap.put(importantContent.get(i));
-                }
-
-                if (continuationEnd.length() > 0){
-                    for(int i = 0; i < continuationEnd.length(); i++){
-                        swap.put(continuationEnd.get(i));
-                    }
-                }
-
-            } catch (JSONException e) {
+            if(importantContent.getJSONObject(importantContent.length() - 1).has("continuationItemRenderer")){
+                setContinuationToken(importantContent);
+                swap = extractContinuationItems(importantContent);
+            } else {
                 for(int i = 0; i < importantContent.length(); i++){
                     swap.put(importantContent.get(i));
                 }
@@ -206,6 +211,7 @@ public class Channel extends Playlist{
         return swap;
     }
 
+    @Override
     public ArrayList<String> getVideos() throws Exception {
         setHtmlUrl(videosUrl);
         return extractId();
@@ -220,6 +226,12 @@ public class Channel extends Playlist{
         setHtmlUrl(streamsUrl);
         return extractId();
     }
+
+    public ArrayList<String> getReleases() throws Exception {
+        setHtmlUrl(releasesUrl);
+        return extractId();
+    }
+
     public ArrayList<String> getPlaylists() throws Exception {
         setHtmlUrl(playlistUrl);
         return extractId();
@@ -237,7 +249,7 @@ public class Channel extends Playlist{
             }catch (JSONException ignored){
             }
         }
-        return videosId;
+        return unify(videosId);
     }
 
     private String getVideoId(JSONObject ids) throws JSONException{
@@ -257,6 +269,17 @@ public class Channel extends Playlist{
                     .getJSONObject("content")
                     .getJSONObject("reelItemRenderer")
                     .getString("videoId");
+        }catch (JSONException e){
+            return getReleasesId(ids);
+        }
+    }
+
+    private String getReleasesId(JSONObject ids) throws JSONException{
+        try{
+            return "https://www.youtube.com/playlist?list=" + ids.getJSONObject("richItemRenderer")
+                    .getJSONObject("content")
+                    .getJSONObject("playlistRenderer")
+                    .getString("playlistId");
         }catch (JSONException e){
             return getPlaylistId(ids);
         }
@@ -363,6 +386,7 @@ public class Channel extends Playlist{
         }
     }
 
+    @Deprecated
     public String getBiography() throws Exception {
         setHtmlUrl(aboutUrl);
         try {
@@ -386,7 +410,11 @@ public class Channel extends Playlist{
     public String getViews() throws Exception {
         setHtmlUrl(aboutUrl);
         try {
-            return getActiveTab(getJson()).getJSONObject("tabRenderer")
+            return getJson().getJSONArray("onResponseReceivedEndpoints")
+                    .getJSONObject(0)
+                    .getJSONObject("showEngagementPanelEndpoint")
+                    .getJSONObject("engagementPanel")
+                    .getJSONObject("engagementPanelSectionListRenderer")
                     .getJSONObject("content")
                     .getJSONObject("sectionListRenderer")
                     .getJSONArray("contents")
@@ -394,9 +422,10 @@ public class Channel extends Playlist{
                     .getJSONObject("itemSectionRenderer")
                     .getJSONArray("contents")
                     .getJSONObject(0)
-                    .getJSONObject("channelAboutFullMetadataRenderer")
-                    .getJSONObject("viewCountText")
-                    .getString("simpleText");
+                    .getJSONObject("aboutChannelRenderer")
+                    .getJSONObject("metadata")
+                    .getJSONObject("aboutChannelViewModel")
+                    .getString("viewCountText");
         }catch (JSONException e){
             return null;
         }
@@ -439,6 +468,10 @@ public class Channel extends Playlist{
 
     public String getStreamsUrl(){
         return streamsUrl;
+    }
+
+    public String getReleasesUrl(){
+        return releasesUrl;
     }
 
     public String getPlaylistUrl(){

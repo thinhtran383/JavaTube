@@ -4,11 +4,13 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Objects;
 
 class InnerTube{
     private static JSONObject innerTubeContext;
@@ -17,7 +19,7 @@ class InnerTube{
     private static String apiKey;
 
     /**
-     * Clients:
+     * @Clients:
      *          WEB,
      *          WEB_EMBED,
      *          WEB_MUSIC,
@@ -287,9 +289,14 @@ class InnerTube{
     public JSONObject getInnerTubeContext() throws JSONException {
         return innerTubeContext;
     }
-    public void updateInnerTubeContext(JSONObject extraInfo){
-        for (String key : extraInfo.keySet()) {
-            innerTubeContext.put(key, extraInfo.get(key));
+    public void updateInnerTubeContext(JSONObject innerTubeContext, JSONObject extraInfo) throws JSONException {
+        for (Iterator<String> it = extraInfo.keys(); it.hasNext(); ) {
+            String key = it.next();
+            if (innerTubeContext.has(key) && innerTubeContext.get(key) instanceof JSONObject) {
+                updateInnerTubeContext(innerTubeContext.getJSONObject(key), extraInfo.getJSONObject(key));
+            } else {
+                innerTubeContext.put(key, extraInfo.get(key));
+            }
         }
     }
     public Map<String, String> getClientHeaders() throws JSONException {
@@ -311,23 +318,23 @@ class InnerTube{
                 "contentCheckOk: \"true\"," +
                 "racyCheckOk: \"true\"";
     }
-    private String urlEncode(JSONObject json){
+    private String urlEncode(JSONObject json) throws JSONException, UnsupportedEncodingException {
         StringBuilder query = new StringBuilder();
         for (Iterator<String> it = json.keys(); it.hasNext(); ) {
             String key = it.next();
             String value = json.getString(key);
-            query.append(URLEncoder.encode(key, StandardCharsets.UTF_8));
+            query.append(URLEncoder.encode(key, StandardCharsets.UTF_8.name()));
             query.append("=");
-            query.append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+            query.append(URLEncoder.encode(value, StandardCharsets.UTF_8.name()));
             query.append("&");
         }
-        if (!query.isEmpty()) {
+        if (query.length() != 0) {
             query.setLength(query.length() - 1);
         }
         return query.toString();
     }
 
-    private Map<String, String> getHeaderMap(){
+    private Map<String, String> getHeaderMap() throws JSONException {
         HashMap<String, String> headers = new HashMap<>();
         Iterator<String> keys = header.keys();
         while (keys.hasNext()) {
@@ -352,9 +359,19 @@ class InnerTube{
         return callApi(endpoint, query, getInnerTubeContext());
     }
 
-    public JSONObject search(String searchQuery) throws Exception {
+    public JSONObject browse(JSONObject data) throws Exception {
+        String endpoint = getBaseUrl() + "/browse";
+        JSONObject query = new JSONObject("{" + getBaseParam() + "}");
+        updateInnerTubeContext(getInnerTubeContext(), data);
+        return callApi(endpoint, query, getInnerTubeContext());
+    }
+
+    public JSONObject search(String searchQuery, String continuationToken) throws Exception {
         String endpoint = getBaseUrl() + "/search";
         JSONObject query = new JSONObject("{query: " + searchQuery + ", " + getBaseParam() + "}");
+        if(!Objects.equals(continuationToken, "")){
+            updateInnerTubeContext(getInnerTubeContext(), new JSONObject("{continuation:" + continuationToken + "}"));
+        }
         return callApi(endpoint, query, getInnerTubeContext());
     }
 }

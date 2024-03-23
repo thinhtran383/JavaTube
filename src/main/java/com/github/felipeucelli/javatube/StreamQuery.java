@@ -16,6 +16,10 @@ public class StreamQuery{
         return fmtStreams;
     }
 
+    public Stream get(int index){
+        return fmtStreams.get(index);
+    }
+
     public StreamQuery filter(HashMap<String, String> filters){
 
         ArrayList<Stream> streamFilter = new ArrayList<>();
@@ -133,18 +137,18 @@ public class StreamQuery{
         if(filters.containsKey("progressive")){
             if(Objects.equals(filters.get("progressive"), "true")){
                 if(!streamFilter.isEmpty()){
-                    streamFilter.retainAll(new ArrayList<>(getProgressive()));
+                    streamFilter.retainAll(new ArrayList<>(progressive()));
                 }else{
-                    streamFilter.addAll(getProgressive());
+                    streamFilter.addAll(progressive());
                 }
                 if(streamFilter.isEmpty()){
                     filters.clear();
                 }
             }else if (Objects.equals(filters.get("progressive"), "false")){
                 if(!streamFilter.isEmpty()){
-                    streamFilter.retainAll(new ArrayList<>(getAdaptive()));
+                    streamFilter.retainAll(new ArrayList<>(adaptive()));
                 }else{
-                    streamFilter.addAll(getAdaptive());
+                    streamFilter.addAll(adaptive());
                 }
                 if(streamFilter.isEmpty()){
                     filters.clear();
@@ -154,18 +158,18 @@ public class StreamQuery{
         if(filters.containsKey("adaptive")){
             if(Objects.equals(filters.get("adaptive"), "true")){
                 if(!streamFilter.isEmpty()){
-                    streamFilter.retainAll(new ArrayList<>(getAdaptive()));
+                    streamFilter.retainAll(new ArrayList<>(adaptive()));
                 }else{
-                    streamFilter.addAll(getAdaptive());
+                    streamFilter.addAll(adaptive());
                 }
                 if(streamFilter.isEmpty()){
                     filters.clear();
                 }
             } else if (Objects.equals(filters.get("adaptive"), "false")) {
                 if(!streamFilter.isEmpty()){
-                    streamFilter.retainAll(new ArrayList<>(getProgressive()));
+                    streamFilter.retainAll(new ArrayList<>(progressive()));
                 }else{
-                    streamFilter.addAll(getProgressive());
+                    streamFilter.addAll(progressive());
                 }
                 if(streamFilter.isEmpty()){
                     filters.clear();
@@ -276,7 +280,7 @@ public class StreamQuery{
         return filter;
     }
 
-    private ArrayList<Stream> getProgressive(){
+    private ArrayList<Stream> progressive(){
         ArrayList<Stream> filter = new ArrayList<>();
         for(Stream st : fmtStreams){
             if(st.isProgressive()){
@@ -286,7 +290,7 @@ public class StreamQuery{
         return filter;
     }
 
-    private ArrayList<Stream> getAdaptive(){
+    private ArrayList<Stream> adaptive(){
         ArrayList<Stream> filter = new ArrayList<>();
         for(Stream st : fmtStreams){
             if(st.isAdaptive()){
@@ -366,6 +370,58 @@ public class StreamQuery{
 
     public Stream getLast(){
         return fmtStreams.get(fmtStreams.size() - 1);
+    }
+
+    public StreamQuery getProgressive(){
+        return new StreamQuery(progressive());
+    }
+
+    public StreamQuery getAdaptive(){
+        return new StreamQuery(adaptive());
+    }
+
+    public StreamQuery getDefaultAudioTracks(){
+        ArrayList<Stream> filter = new ArrayList<>();
+        for(Stream st : fmtStreams){
+            if(st.isDefaultAudioTrack() ){
+                filter.add(st);
+            }
+        }
+        return new StreamQuery(filter);
+    }
+
+    public StreamQuery getExtraAudioTracks(){
+        ArrayList<Stream> filter = new ArrayList<>();
+        for(Stream st : fmtStreams){
+            if(!st.isDefaultAudioTrack() && st.includeAudioTrack() && !st.includeVideoTrack()){
+                filter.add(st);
+            }
+        }
+        return new StreamQuery(filter);
+    }
+
+    public StreamQuery getExtraAudioTracksById(String id){
+        ArrayList<Stream> filter = new ArrayList<>();
+        for(Stream st : fmtStreams){
+            if(st.includesMultipleAudioTracks()) {
+                if (Objects.equals(st.getAudioTrackId(), id)) {
+                    filter.add(st);
+                }
+            }
+        }
+        return new StreamQuery(filter);
+    }
+
+    public StreamQuery getExtraAudioTracksByName(String name){
+        ArrayList<Stream> filter = new ArrayList<>();
+        for(Stream st : fmtStreams){
+            if(st.includesMultipleAudioTracks()){
+                if(Objects.equals(st.getAudioTrackName(), name)){
+                    filter.add(st);
+                }
+            }
+        }
+        return new StreamQuery(filter);
     }
 
     public Stream getOnlyAudio(){

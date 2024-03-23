@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.text.DecimalFormat;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -19,16 +18,32 @@ import java.util.regex.Pattern;
 public class Captions {
     private final String url;
     private final String code;
+    private final String name;
 
     public Captions(JSONObject captionTrack) throws JSONException {
         url = captionTrack.getString("baseUrl");
-        code = captionTrack.getString("vssId").replace(".", "");
+        String vssId = captionTrack.getString("vssId");
+        code = vssId.startsWith(".") ? vssId.replace(".", "") : vssId;
+        JSONObject nameContent = captionTrack.getJSONObject("name");
+        name = nameContent.has("simpleText") ? nameContent.getString("simpleText") : nameContent
+                .getJSONArray("runs")
+                .getJSONObject(0)
+                .getString("text");
     }
+
+    @Override
+    public String toString(){
+        return "<Caption lang=\"" + name + "\" code=\"" + code + "\">";
+    }
+
     public String getUrl(){
         return url;
     }
     public String getCode(){
         return code;
+    }
+    public String getName(){
+        return name;
     }
 
     private String getXmlCaptions() throws Exception {

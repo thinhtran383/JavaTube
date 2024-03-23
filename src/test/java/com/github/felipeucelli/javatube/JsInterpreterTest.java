@@ -1,6 +1,7 @@
 package com.github.felipeucelli.javatube;
 
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -25,7 +26,11 @@ public class JsInterpreterTest {
                 "da7c2a60-player_ias.vflset-en_US.txt",
                 "21812a9c-player_ias.vflset-en_US.txt",
                 "c153b631-player-plasma-ias-tablet-en_US.vflset.txt",
-                "019a2dc2-player-ias-vflset_en_US.txt"
+                "019a2dc2-player-ias-vflset_en_US.txt",
+                "5bdfe6d5-player_ias.vflset-en_US.txt",
+                "31e0b6d9-player_ias.vflset-en_US.txt",
+                "42a553e1-player_ias.vflset-en_US.txt",
+                "3ffefd71-player_ias.vflset-en_US.txt"
                 );
     }
     private String readFileContent(String fileName) throws IOException {
@@ -33,6 +38,28 @@ public class JsInterpreterTest {
         assertTrue(Files.exists(filePath), "File " + fileName + " not found.");
 
         return new String(Files.readAllBytes(filePath));
+    }
+
+    @Test
+    public void testInterpreterCurrentSig() throws Exception {
+        Youtube yt = new Youtube("https://www.youtube.com/watch?v=O3ElohqHEzQ");
+        Cipher c = new Cipher(yt.getJs(), yt.getYtPlayerJs());
+
+        String sig = "AOq0QJ8wRQIhANGlXiqWj4dne3ftJz6RMy5hK5Xe3QP3oC7MzEWXWYhWAiBOlqAWYj6ZOU-jlBaNLTTUGFOuR%3Dm397tElCFtpaC8jw%3Db";
+
+        new JsInterpreter(yt.getJs()).callFunction(c.getSignatureFunctionName(), sig);
+    }
+
+    @Test
+    public void testInterpreterCurrentNSig() throws Exception {
+        Youtube yt = new Youtube("https://www.youtube.com/watch?v=O3ElohqHEzQ");
+        Cipher c = new Cipher(yt.getJs(), yt.getYtPlayerJs());
+
+        String Nsig = "70QzMb0nhneLLS6BN";
+
+        String result = (String) new JsInterpreter(yt.getJs()).callFunction(c.getThrottlingFunctionName(), Nsig);
+
+        assertFalse(result.startsWith("enhanced_except"));
     }
 
     @ParameterizedTest
@@ -66,6 +93,10 @@ public class JsInterpreterTest {
             case "c153b631-player-plasma-ias-tablet-en_US.vflset.txt" ->
                     List.of("AAnFkOJ694_Uew", "dq", "NL7YwUhStcFhEdqJ");
             case "019a2dc2-player-ias-vflset_en_US.txt" -> List.of("6giJCNZ6QlHatA", "Ula", "mSyHU9iB6viPu5-");
+            case "5bdfe6d5-player_ias.vflset-en_US.txt" -> List.of("6WVNa9oCSHok", "fma", "6giJCNZ6QlHatA");
+            case "31e0b6d9-player_ias.vflset-en_US.txt" -> List.of("BVP_Rb2aDs", "kma", "6giJCNZ6QlHatA");
+            case "42a553e1-player_ias.vflset-en_US.txt" -> List.of("t5Jp2AyA1Jog2", "ema", "70QzMb0nhneLLS6BN");
+            case "3ffefd71-player_ias.vflset-en_US.txt" -> List.of("Qp4YR89PTr-vmb", "ima", "70QzMb0nhneLLS6BN");
             default -> List.of("", "", "");
         };
     }
@@ -90,6 +121,10 @@ public class JsInterpreterTest {
                     List.of("4wH9ODMkVi1I6bSu6ToLszs4gJNOwGF6XO=0AQ2T5AEiAUeci1en8CPWsA6WrK1VLwzakAOD-YLj-AJeQBffJluMAhIgRw8JQ0qOAA", "Qja", "AAOq0QJ8wRgIhAMulJffBQeJA-jLY-DOAkazwLV1KrW6AsWPC8ne1iceUAiEA5T2QA0=OX6FGwONJg4szsLoT6u4b6I1iVkMDO9HwSJwv");
             case "019a2dc2-player-ias-vflset_en_US.txt" ->
                     List.of("AOq0QJ8wRAIgINWRWqXhcJg0Em3IRnTm5qrUo93yib6IL45hGtp70P4CIEFnKG9FWGINGP6ymEHCqjN_Orw5jK63ReERDDogUxTO", "AKa", "AOqAOq0QJ8wRAIgINWRWqXhcJg0Em3IRnTm5qrUo9Oyib6IL45hGtp70P4CIEFnKG9FWGINGP6ymEHCqjN_Orw5jK63ReERDDogUxTO3");
+            case "5bdfe6d5-player_ias.vflset-en_US.txt" -> List.of("tTxUgoDDREeR36Kj5wrO_NjqCHEmy6PGNIGWF9GKnFEIC4P07pOGh54LI6biy39oUrq5mTnRI3mE0gJchXqWRWNIgIARw8JQ0q", "ZKa", "AOq0QJ8wRAIgINWRWqXhcJg0Em3IRnTm5qrUo93yib6IL45hGtp70P4CIEFnKG9FWGINGP6ymEHCqjN_Orw5jK63ReERDDogUxTO");
+            case "31e0b6d9-player_ias.vflset-en_US.txt" -> List.of("OTxUgoDDREeR36Kj5wrO_NjqCHEmy6PGNIGTF9GKnFEIC4P07ptGh54LI6biy39oUrq5m0nRI3mE0gJchXqWRWNIgIARw8JQA", "zLa", "AOq0QJ8wRAIgINWRWqXhcJg0Em3IRnTm5qrUo93yib6IL45hGtp70P4CIEFnKG9FWGINGP6ymEHCqjN_Orw5jK63ReERDDogUxTO");
+            case "42a553e1-player_ias.vflset-en_US.txt" -> List.of("xUgoDDREeR36Kj5wrObNjqCHEmy6PGNIGWF9GKnFEIC4P07ptGh54AI6Oiy39oUrq5mTnRI3mE0gJchXqWRWNIgIARw8JQ0qO", "YLa", "AOq0QJ8wRAIgINWRWqXhcJg0Em3IRnTm5qrUo93yib6IL45hGtp70P4CIEFnKG9FWGINGP6ymEHCqjN_Orw5jK63ReERDDogUxTO");
+            case "3ffefd71-player_ias.vflset-en_US.txt"  -> List.of("UgoDDREeR36Kj5wrO_NjqCHEmy6PGNIGWO9GKnFEIC4P0JptGh54LI6biy39oUrq5mTnRI3mE0gJchXqWRWNIgIARw8", "CMa", "AOq0QJ8wRAIgINWRWqXhcJg0Em3IRnTm5qrUo93yib6IL45hGtp70P4CIEFnKG9FWGINGP6ymEHCqjN_Orw5jK63ReERDDogUxTO");
             default -> List.of("", "", "");
         };
 
